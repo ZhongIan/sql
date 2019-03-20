@@ -19,11 +19,12 @@ https://leetcode.com/problems/nth-highest-salary/
 
 
 ```sql
+# MySQL
+
 CREATE FUNCTION getNthHighestSalary(N INT) RETURNS INT
 BEGIN
     SET N = N - 1;
     RETURN(
-        # Write your MySQL query statement below.
         SELECT IFNULL(
             (
                 SELECT DISTINCT Salary FROM Employee
