@@ -377,6 +377,212 @@ SELECT @sum 總和
 
 ## 批次 GO 指令
 
+GO 不是 T-SQL 的陳述式，它是 sqlcmd 、osql、isql 這幾個公用程式與 SQL Server Management Studio 或 SQL Server Enterprise Manager 程式碼編輯器都能夠辨識的一個命令，以便將目前的 T-SQL 陳述式以**「批次」方式傳送給 SQL Server 進行執行
+
+```sql
+PRINT '今天是 ' + CONVERT(char(10), getdate(), 101)
+GO 10
+```
+
+GO 後面所接的那個參數，是指定要執行在 GO 之前的 T-SQL 批次的次數啊！
+
+# 15.如何在 T-SQL 中宣告變數
+
+在 T-SQL 中，需要使用到變數，不外乎下面幾種情況：
+
+* 將參數傳給預存程序或是函式 # 10.
+* 控制迴圈的執行 # 11.
+* 在 IF 陳述式中，作為條件判斷的依據 # 12.
+* 在 WHERE 陳述式中，作為篩選條件的依據
+
+在 Microsoft SQL Server 裡，所有的變數都是區域變數，也就是說，所宣告的變數只能夠在同一個批次、預存程序或該變數所定義的區塊裡面，被用到。
+
+## 宣告變數
+
+```sql
+-- 可以同時宣告多個變數，變數跟變數之間，用逗號來分隔
+DECLARE @count int, @x int, @y nvarchar(10)
+
+-- 檢查變數的初始值
+SELECT [@count] = @count, [@x] = @x, [@y] = @y
+-- [@count] : [欄位名稱]
+
+-- 使用 SET 指派值
+SET @count = 1
+
+-- 使用 SELECT 指派值
+SELECT @x = 0, @y = 'alexc'
+
+-- 檢查變數的設定值
+SELECT [@count] = @count, [@x] = @x, [@y] = @y
+```
+
+## WHERE [與 宣告變數] 陳述式中，作為篩選條件的依據
+
+假設要從 AdventureWorks 資料庫的 HumanResources.Employee 資料表中，找出員工編號小於等於 10 的員工，可以使用下面的程式碼：
+
+```sql
+USE AdventureWorks
+GO
+
+DECLARE @EmpID int
+SET @EmpID = 10
+
+SELECT 員工編號 = EmployeeID,
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+FROM HumanResources.Employee
+WHERE EmployeeID <= @EmpID
+```
+
+# 16.如何使用次序函數於查詢資料時，針對某個欄位進行排名(上)
+
+[排名函數 row_nimber() rank() dense_rank()](http://tina0221.pixnet.net/blog/post/69775503-%E3%80%90sql%E3%80%91case%E5%87%BD%E6%95%B8%E3%80%81%E6%8E%92%E5%BA%8F%E5%87%BD%E6%95%B8%28row%E3%80%81rank%E3%80%81dense_rank%29)
+
+[T-SQL DOC 次序函數](https://docs.microsoft.com/zh-tw/previous-versions/sql/sql-server-2005/ms189798(v=sql.90))
+
+Microsoft SQL Server 2008 已經把*次序函數*改名成*排名函數*。
+
+**「次序函數」來傳回資料分割（Partition）中，某個欄位的一個次序值，共有下列 4 種「次序函數」**：
+
+* ROW_NUMBER
+
+row_nimber()
+
+    row_nimber() over (order by 欄位排序)：一欄位排序給序號
+
+* RANK
+
+rank() 
+
+    rank() over (order by 欄位排序)：同上，遇到同值時排名相同，後面跳過(1、2、2、4)
+* DENSE_RANK
+
+dense_rank()
+
+    dense_rank() over (order by 欄位排序):同上，後面不跳過而是接續(1、2、2、3)
+
+* NTILE
+
+NTILE()
+
+    NTILE(4) OVER (ORDER BY 欄位排序) : 按照給定數字，等分排名 
+    EX: ROW -> 9 NTILE(4)
+    排序後給定序號 -> 1,1,1,2,2,3,3,4,4
+
+先在 AdventureWorks 資料庫中，建立在「使用流程控制：BEGIN...END 與 RETURN」討論過的自訂計算年齡函數： # 10
+
+```sql
+USE AdventureWorks
+GO
+
+-- 建立自訂函數
+CREATE FUNCTION dbo.fn_GetAge(@myDate datetime)
+RETURNS int
+AS
+BEGIN
+
+-- 宣告變數
+DECLARE @age int, @day datetime
+
+-- 以「年」為單位計算出年齡
+SET @age = DATEDIFF(yy, @myDate, getdate()) -
+		CASE WHEN @day < DATEADD(yy, DATEDIFF(yy, @myDate, @day), @myDate)
+			THEN 1
+			ELSE 0
+		END
+RETURN @age
+
+END
+GO
+```
+
+接著要從 HumanResources.Employee 資料表中，透過上面建立的 fn_GetAge 函數，依照年齡由小至大，產生排名的欄位：
+
+```sql
+SELECT 依照年齡排名 = ROW_NUMBER() OVER (ORDER BY dbo.fn_GetAge(BirthDate)),
+	年齡 = dbo.fn_GetAge(BirthDate),
+	員工編號 = EmployeeID,
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+FROM HumanResources.Employee
+```
+
+`PARTITION BY` 的欄位可以有多個，例如先依照性別分組，再依照婚姻來分組：
+
+```sql
+SELECT 依序以性別與婚姻分組的年齡排名 = ROW_NUMBER() OVER (
+    PARTITION BY Gender, MaritalStatus 
+    ORDER BY dbo.fn_GetAge(BirthDate)
+    ),
+	年齡 = dbo.fn_GetAge(BirthDate),
+	員工編號 = EmployeeID,
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+FROM HumanResources.Employe
+```
+
+# 17.如何使用次序函數於查詢資料時，針對某個欄位進行排名（下）
+
+如果要把結果分成特定數目的組，可以使用 `NTILE()` 函數，例如下面的程式碼會依照年齡來排名，將資料分成 58 組：
+
+```sql
+SELECT [依照年齡排名分成 58 組] = NTILE(58) OVER (
+    ORDER BY dbo.fn_GetAge(BirthDate)
+    ),
+	年齡 = dbo.fn_GetAge(BirthDate),
+	員工編號 = EmployeeID,
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+FROM HumanResources.Employee
+```
+
+`NTILE()` 函數最常用於找出某一組中的資料，例如依照年齡排名，把資料分成 58 組，然後要找出第 2 組中的資料：
+
+```sql
+SELECT 年齡 = dbo.fn_GetAge(BirthDate),
+	員工編號 = EmployeeID,
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+FROM (
+    SELECT 分組 = NTILE(58) OVER (ORDER BY dbo.fn_GetAge(BirthDate)),
+	BirthDate, EmployeeID, Gender, MaritalStatus
+	FROM HumanResources.Employee
+    ) temp
+WHERE 分組 = 2
+```
+
+# 18.如何使用次序函數刪除重複的記錄
 
 
 
