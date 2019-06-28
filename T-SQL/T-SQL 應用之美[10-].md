@@ -584,6 +584,84 @@ WHERE 分組 = 2
 
 # 18.如何使用次序函數刪除重複的記錄
 
+[一般資料表運算式（Common Table Expressions，CTE） 遞迴運算](https://docs.microsoft.com/zh-tw/previous-versions/sql/sql-server-2008-r2/ms190766(v=sql.105))
+
+先從 AdventureWorks 資料庫中的 HumanResources.Employee 資料表裡，查詢資料來建立年齡欄位會有重複的測試用資料表：
+
+```sql
+USE AdventureWorks
+GO
+
+-- 使用 SELECT...INTO 匯入資料
+SELECT 年齡 = dbo.fn_GetAge(BirthDate),
+	性別 = CASE Gender
+			WHEN 'M' THEN N'男'
+			WHEN 'F' THEN N'女'
+		END,
+	婚姻 = CASE MaritalStatus
+			WHEN 'S' THEN N'單身'
+			WHEN 'M' THEN N'已婚'
+		END
+INTO 測試資料表
+FROM HumanResources.Employee
+
+-- 看一下匯入的資料
+SELECT * FROM 測試資料表 ORDER BY 年齡
+```
+
+依照年齡、性別與婚姻由小至大，產生不會重複且是唯一的編號欄位：
+
+```sql
+SELECT 編號 = ROW_NUMBER() OVER (ORDER BY 年齡, 性別, 婚姻), *
+	FROM 測試資料表
+```
+
+我們先用一般資料表運算式`（Common Table Expressions，CTE）`，透過 `GROUP BY` 子句找出重複記錄中的第一筆資料：
+
+```sql
+WITH 重複的記錄 AS (
+    SELECT 編號 = ROW_NUMBER() OVER (ORDER BY 年齡, 性別, 婚姻), *
+		FROM 測試資料表
+    )
+SELECT * FROM 重複的記錄
+WHERE 編號 NOT IN(
+    SELECT MIN(編號) FROM 重複的記錄
+	GROUP BY 年齡, 性別, 婚姻
+    )
+```
+
+既然已經找出重複的資料，當然就可以刪除這些重複的資料，只是現在要把剛剛那段程式碼中的 `SELECT` *，換成 `DELETE`：
+
+```sql
+WITH 重複的記錄 AS (
+    SELECT 編號 = ROW_NUMBER() OVER (ORDER BY 年齡, 性別, 婚姻), *
+		FROM 測試資料表
+    )
+DELETE * FROM 重複的記錄
+WHERE 編號 NOT IN(
+    SELECT MIN(編號) FROM 重複的記錄
+	GROUP BY 年齡, 性別, 婚姻
+    )
+```
+
+下面的程式碼查詢刪除重複資料後的結果：
+
+```sql
+SELECT * FROM 測試資料表 ORDER BY 年齡
+```
+
+# 在 SELECT 中，使用萬用字元：*
+
+
+
+
+
+
+
+
+
+
+
 
 
 
